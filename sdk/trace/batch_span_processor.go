@@ -64,6 +64,16 @@ type BatchSpanProcessorOptions struct {
 	// Blocking option should be used carefully as it can severely affect the performance of an
 	// application.
 	BlockOnQueueFull bool
+
+	DroppedSpanCh chan<- BatchSpanProcessorStatus
+}
+
+type BatchSpanProcessorStatus struct {
+	NumBatchedSpans     int
+	BatchedSpanCapacity int
+	NumQueuedSpans      int
+	QueuedSpanCapacity  int
+	TotalDroppedSpans   uint32
 }
 
 // batchSpanProcessor is a SpanProcessor that batches asynchronously-received
@@ -205,6 +215,28 @@ func (bsp *batchSpanProcessor) ForceFlush(ctx context.Context) error {
 	return err
 }
 
+type BatchSpanProcessorStatuser interface {
+	Status() BatchSpanProcessorStatus
+}
+
+var _ BatchSpanProcessorStatuser = (*batchSpanProcessor)(nil)
+
+func (bsp *batchSpanProcessor) Status() BatchSpanProcessorStatus {
+	return BatchSpanProcessorStatus{
+		NumBatchedSpans:     len(bsp.batch),
+		BatchedSpanCapacity: cap(bsp.batch),
+		NumQueuedSpans:      len(bsp.queue),
+		QueuedSpanCapacity:  cap(bsp.queue),
+		TotalDroppedSpans:   atomic.LoadUint32(&bsp.dropped),
+	}
+}
+
+func WithDroppedSpanCh(ch chan<- BatchSpanProcessorStatus) BatchSpanProcessorOption {
+	return func(o *BatchSpanProcessorOptions) {
+		o.DroppedSpanCh = ch
+	}
+}
+
 func WithMaxQueueSize(size int) BatchSpanProcessorOption {
 	return func(o *BatchSpanProcessorOptions) {
 		o.MaxQueueSize = size
@@ -237,7 +269,6 @@ func WithBlocking() BatchSpanProcessorOption {
 
 // exportSpans is a subroutine of processing and draining the queue.
 func (bsp *batchSpanProcessor) exportSpans(ctx context.Context) error {
-
 	bsp.timer.Reset(bsp.o.BatchTimeout)
 
 	bsp.batchMutex.Lock()
@@ -330,6 +361,9 @@ func (bsp *batchSpanProcessor) drainQueue() {
 			}
 		default:
 			close(bsp.queue)
+			if bsp.o.DroppedSpanCh != nil {
+				close(bsp.o.DroppedSpanCh)
+			}
 		}
 	}
 }
@@ -378,6 +412,13 @@ func (bsp *batchSpanProcessor) enqueueBlockOnQueueFull(ctx context.Context, sd R
 		return true
 	default:
 		atomic.AddUint32(&bsp.dropped, 1)
+		if bsp.o.DroppedSpanCh != nil {
+			select {
+			case bsp.o.DroppedSpanCh <- bsp.Status():
+			case <-ctx.Done():
+			default:
+			}
+		}
 	}
 	return false
 }
