@@ -218,10 +218,12 @@ func (bsp *batchSpanProcessor) ForceFlush(ctx context.Context) error {
 	return err
 }
 
+// mandatory comment
 type BatchSpanProcessorStatuser interface {
 	Status() BatchSpanProcessorStatus
 }
 
+// mandatory comment
 var _ BatchSpanProcessorStatuser = (*batchSpanProcessor)(nil)
 
 func (bsp *batchSpanProcessor) Status() BatchSpanProcessorStatus {
@@ -234,6 +236,7 @@ func (bsp *batchSpanProcessor) Status() BatchSpanProcessorStatus {
 	}
 }
 
+// mandatory comment
 func WithDroppedSpanCh(ch chan<- BatchSpanProcessorStatus) BatchSpanProcessorOption {
 	return func(o *BatchSpanProcessorOptions) {
 		o.DroppedSpanCh = ch
