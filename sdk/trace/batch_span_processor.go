@@ -71,6 +71,7 @@ type BatchSpanProcessorOptions struct {
 	DroppedSpanCh chan<- BatchSpanProcessorStatus
 }
 
+// mandatory comment.
 type BatchSpanProcessorStatus struct {
 	NumBatchedSpans     int
 	BatchedSpanCapacity int
